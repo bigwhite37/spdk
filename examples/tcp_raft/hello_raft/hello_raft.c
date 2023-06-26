@@ -108,7 +108,7 @@ struct peer_connection_t {
 
 struct hello_context_t {
 	int node_id;
-	char* host;
+	char host[ADDR_STR_LEN];
 	int raft_port;
 	struct spdk_sock *sock;
 	struct spdk_sock_group *group;
@@ -131,7 +131,7 @@ struct hello_cb_context_t {
 };
 
 static int g_node_id;
-static char* g_host;
+static char g_host[ADDR_STR_LEN];
 static int g_raft_port;
 static bool g_is_running;
 static int g_is_start;
@@ -195,7 +195,7 @@ static int hello_raft_parse_arg(int ch, char *arg) {
 		g_node_id = (int)spdk_strtol(arg, 10);
 		break;
 	case 'H':
-		g_host = arg;
+        memcpy(g_host, arg, ADDR_STR_LEN);
 		break;
 	case 'P':
 		g_raft_port = (int)spdk_strtol(arg, 10);
@@ -468,7 +468,9 @@ static void on_connection_accepted_by_peer(void *arg, struct spdk_sock_group *gr
 
 static void connection_set_peer(struct peer_connection_t *conn, char *host, int port) {
 	conn->raft_port = port;
-	memcpy(conn->addr, host, sizeof(conn->addr));
+    SPDK_NOTICELOG("conn is %p, *conn->addr is %s, host is %p, *host is %s\n",
+        conn, conn->addr, host, host);
+	strncpy(conn->addr, host, ADDR_STR_LEN);
 	SPDK_NOTICELOG("set connection to %s:%d\n", host, port);
 }
 
@@ -932,7 +934,7 @@ static void hello_start(void *arg1) {
 
 	ctx->sock = spdk_sock_listen_ext(ctx->host, ctx->raft_port, HELLO_RAFT_SOCK_IMPL, &opts);
 	if (ctx->sock == NULL) {
-		SPDK_ERRLOG("Cannot create server socket\n");
+		SPDK_ERRLOG("Cannot create server socket on %s:%d\n", ctx->host, ctx->raft_port);
 		return;
 	}
 
@@ -997,7 +999,7 @@ int main(int argc, char **argv) {
 	hello_context.raft = raft_new();
     raft_set_callbacks(hello_context.raft, &raft_funcs, &cb_ctx);
     hello_context.node_id = g_node_id;
-    hello_context.host = g_host;
+    memcpy(hello_context.host, g_host, ADDR_STR_LEN);
 	hello_context.raft_port = g_raft_port;
     raft_add_node(hello_context.raft, NULL, hello_context.node_id, 1);
 
@@ -1008,8 +1010,11 @@ int main(int argc, char **argv) {
 					hello_raft_usage)) != SPDK_APP_PARSE_ARGS_SUCCESS) {
 		exit(rc);
 	}
+    hello_context.node_id = g_node_id;
+    memcpy(hello_context.host, g_host, ADDR_STR_LEN);
+    hello_context.raft_port = g_raft_port;
 
-struct spdk_sock_impl_opts impl_opts = {};
+    struct spdk_sock_impl_opts impl_opts = {};
 	size_t len = sizeof(impl_opts);
 	spdk_sock_impl_set_opts(HELLO_RAFT_SOCK_IMPL, &impl_opts, len);
     rc = spdk_app_start(&opts, hello_start, &cb_ctx);
